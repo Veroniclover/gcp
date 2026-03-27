@@ -46,10 +46,5 @@
         "downlinkOnly": 5
       }
     }
-  },
-
-  "mux": {
-    "enabled": true,
-    "concurrency": 8
   }
 }

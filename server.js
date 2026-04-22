@@ -16,10 +16,6 @@ let maxConnections = 0;
 
 
 const TIMEOUT = 15000; 
-const RATE_LIMIT_MS = 1000;
-
-
-const lastSeen = new Map();
 
 function getClientIP(req) {
   const xff = req.headers["x-forwarded-for"];
@@ -29,16 +25,6 @@ function getClientIP(req) {
 
 function getKey(req) {
   return getClientIP(req) + "|" + (req.headers["user-agent"] || "unknown");
-}
-
-function allow(ip) {
-  const now = Date.now();
-  const prev = lastSeen.get(ip) || 0;
-
-  if (now - prev < RATE_LIMIT_MS) return false;
-
-  lastSeen.set(ip, now);
-  return true;
 }
 
 function cleanup() {
@@ -57,7 +43,6 @@ setInterval(cleanup, 5000);
 
 const server = http.createServer((req, res) => {
 
-  
   if (req.url === "/cmon") {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(`
@@ -96,7 +81,7 @@ const server = http.createServer((req, res) => {
       document.getElementById('max').innerText = data.max;
     }
 
-    setInterval(load, 2000); 
+    setInterval(load, 2000);
     load();
   </script>
 </body>
@@ -105,7 +90,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  
   if (req.url === "/stats") {
     cleanup();
 
@@ -129,14 +113,6 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  const ip = getClientIP(req);
-
-  
-  if (!allow(ip)) {
-    socket.destroy();
-    return;
-  }
-
   const key = getKey(req);
 
   
@@ -146,7 +122,6 @@ server.on("upgrade", (req, socket, head) => {
     maxConnections = activeIPs.size;
   }
 
-  
   proxy.ws(req, socket, head);
 
   

@@ -93,8 +93,13 @@ const server = http.createServer((req, res) => {
         maxConnections = activeIPs.size;
       }
       proxy.ws(req, socket, head, {
-        target: `http://127.0.0.1:8001`
+        target: "http://127.0.0.1:8001",
+        ws: true,
+        changeOrigin: true,
+        xfwd: true
       });
+    } else {
+      socket.destroy();
     }
   });
   

@@ -1,7 +1,7 @@
 {
   "inbounds": [
     {
-      "port": 8080,
+      "port": 8001,
       "protocol": "vless",
       "settings": {
         "decryption": "none",
@@ -15,7 +15,7 @@
         "network": "ws",
         "security": "none",
         "wsSettings": {
-          "path": "/ws",
+          "path": "/v1/projects/update",
           "headers": {}
         }
       }

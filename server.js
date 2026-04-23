@@ -10,8 +10,8 @@ const proxy = httpProxy.createProxyServer({
 
 const XRAY_PATH = "/v1/projects/update";
 const POLL_INTERVAL = 10000;
-const TIMEOUT = 15000;
 
+// Track { count, lastSeen } per IP
 const activeIPs = new Map();
 let maxConnections = 0;
 
@@ -21,10 +21,31 @@ function getIP(req) {
   return req.socket.remoteAddress;
 }
 
+function addIP(ip) {
+  const entry = activeIPs.get(ip);
+  if (entry) {
+    entry.count++;
+    entry.lastSeen = Date.now();
+  } else {
+    activeIPs.set(ip, { count: 1, lastSeen: Date.now() });
+  }
+  if (activeIPs.size > maxConnections) maxConnections = activeIPs.size;
+}
+
+function removeIP(ip) {
+  const entry = activeIPs.get(ip);
+  if (!entry) return;
+  entry.count--;
+  if (entry.count <= 0) {
+    activeIPs.delete(ip);
+  }
+}
+
+// Fallback cleanup for sockets that never fired close/error
 function cleanup() {
   const now = Date.now();
-  for (const [ip, ts] of activeIPs.entries()) {
-    if (now - ts > TIMEOUT) activeIPs.delete(ip);
+  for (const [ip, entry] of activeIPs.entries()) {
+    if (now - entry.lastSeen > 30000) activeIPs.delete(ip);
   }
 }
 
@@ -143,7 +164,6 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/stats") {
-    cleanup();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       connections: activeIPs.size,
@@ -163,13 +183,20 @@ server.on("upgrade", (req, socket, head) => {
   }
 
   const ip = getIP(req);
-  activeIPs.set(ip, Date.now());
-
-  if (activeIPs.size > maxConnections) maxConnections = activeIPs.size;
+  addIP(ip);
 
   proxy.ws(req, socket, head);
 
-  socket.on("data", () => activeIPs.set(ip, Date.now()));
+  // Bump lastSeen on activity so cleanup doesn't evict active connections
+  socket.on("data", () => {
+    const entry = activeIPs.get(ip);
+    if (entry) entry.lastSeen = Date.now();
+  });
+
+  // Safely decrement — only deletes the IP when their last socket closes
+  const remove = () => removeIP(ip);
+  socket.on("close", remove);
+  socket.on("error", remove);
 });
 
 server.listen(8080, () => console.log("Server running on port 8080"));

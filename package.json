@@ -1,8 +1,0 @@
-{
-  "name": "cmon",
-  "version": "1.0.0",
-  "main": "server.js",
-  "dependencies": {
-    "http-proxy": "^1.18.1"
-  }
-}

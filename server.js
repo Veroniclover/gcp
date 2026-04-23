@@ -8,7 +8,6 @@ const proxy = httpProxy.createProxyServer({
   xfwd: true
 });
 
-// Without this, any proxy error crashes the entire process
 proxy.on("error", (err, req, res) => {
   console.error("Proxy error:", err.message);
   if (res && res.destroy) res.destroy();
@@ -189,15 +188,26 @@ server.on("upgrade", (req, socket, head) => {
 
   proxy.ws(req, socket, head);
 
-  socket.on("data", () => {
+  // Refresh lastSeen on activity
+  const refreshIP = () => {
     const entry = activeIPs.get(ip);
     if (entry) entry.lastSeen = Date.now();
-  });
+  };
+  socket.on("data", refreshIP);
 
-  // once instead of on — guarantees removeIP is only called once per socket
-  const remove = () => removeIP(ip);
-  socket.once("close", remove);
-  socket.once("error", remove);
+  // Guard ensures removeIP + listener cleanup only happens once,
+  // even if both "error" and "close" fire on the same socket
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    socket.removeListener("data", refreshIP); // explicit cleanup, no lingering closures
+    removeIP(ip);
+    if (!socket.destroyed) socket.destroy(); // ensure socket is actually freed
+  };
+
+  socket.once("close", cleanup);
+  socket.once("error", cleanup);
 });
 
 const PORT = process.env.PORT || 8080;

@@ -9,27 +9,22 @@ const proxy = httpProxy.createProxyServer({
 });
 
 const XRAY_PATH = "/v1/projects/update";
+const POLL_INTERVAL = 10000;
+const TIMEOUT = 15000;
 
 const activeIPs = new Map();
 let maxConnections = 0;
 
-const TIMEOUT = 15000;
-const POLL_INTERVAL = 10000;
-
-function getClientIP(req) {
+function getIP(req) {
   const xff = req.headers["x-forwarded-for"];
   if (xff) return xff.split(",")[0].trim();
   return req.socket.remoteAddress;
 }
 
-function getKey(req) {
-  return getClientIP(req) + "|" + (req.headers["user-agent"] || "unknown");
-}
-
 function cleanup() {
   const now = Date.now();
-  for (const [key, ts] of activeIPs.entries()) {
-    if (now - ts > TIMEOUT) activeIPs.delete(key);
+  for (const [ip, ts] of activeIPs.entries()) {
+    if (now - ts > TIMEOUT) activeIPs.delete(ip);
   }
 }
 
@@ -133,8 +128,7 @@ const server = http.createServer((req, res) => {
 
     function updateAgo() {
       const sec = Math.round((Date.now() - lastFetch) / 1000);
-      const el = document.getElementById('ago');
-      el.textContent = sec <= 1 ? 'just now' : \`\${sec}s ago\`;
+      document.getElementById('ago').textContent = sec <= 1 ? 'just now' : \`\${sec}s ago\`;
     }
 
     setInterval(fetchStats, INTERVAL);
@@ -151,7 +145,10 @@ const server = http.createServer((req, res) => {
   if (req.url === "/stats") {
     cleanup();
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ connections: activeIPs.size, max: maxConnections }));
+    res.end(JSON.stringify({
+      connections: activeIPs.size,
+      max: maxConnections
+    }));
     return;
   }
 
@@ -165,14 +162,14 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  const key = getKey(req);
-  activeIPs.set(key, Date.now());
+  const ip = getIP(req);
+  activeIPs.set(ip, Date.now());
 
   if (activeIPs.size > maxConnections) maxConnections = activeIPs.size;
 
   proxy.ws(req, socket, head);
 
-  socket.on("data", () => activeIPs.set(key, Date.now()));
+  socket.on("data", () => activeIPs.set(ip, Date.now()));
 });
 
 server.listen(8080, () => console.log("Server running on port 8080"));

@@ -8,10 +8,15 @@ const proxy = httpProxy.createProxyServer({
   xfwd: true
 });
 
+// Without this, any proxy error crashes the entire process
+proxy.on("error", (err, req, res) => {
+  console.error("Proxy error:", err.message);
+  if (res && res.destroy) res.destroy();
+});
+
 const XRAY_PATH = "/v1/projects/update";
 const POLL_INTERVAL = 10000;
 
-// Track { count, lastSeen } per IP
 const activeIPs = new Map();
 let maxConnections = 0;
 
@@ -36,12 +41,9 @@ function removeIP(ip) {
   const entry = activeIPs.get(ip);
   if (!entry) return;
   entry.count--;
-  if (entry.count <= 0) {
-    activeIPs.delete(ip);
-  }
+  if (entry.count <= 0) activeIPs.delete(ip);
 }
 
-// Fallback cleanup for sockets that never fired close/error
 function cleanup() {
   const now = Date.now();
   for (const [ip, entry] of activeIPs.entries()) {
@@ -187,16 +189,16 @@ server.on("upgrade", (req, socket, head) => {
 
   proxy.ws(req, socket, head);
 
-  // Bump lastSeen on activity so cleanup doesn't evict active connections
   socket.on("data", () => {
     const entry = activeIPs.get(ip);
     if (entry) entry.lastSeen = Date.now();
   });
 
-  // Safely decrement — only deletes the IP when their last socket closes
+  // once instead of on — guarantees removeIP is only called once per socket
   const remove = () => removeIP(ip);
-  socket.on("close", remove);
-  socket.on("error", remove);
+  socket.once("close", remove);
+  socket.once("error", remove);
 });
 
-server.listen(8080, () => console.log("Server running on port 8080"));
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
